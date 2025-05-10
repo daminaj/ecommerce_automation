@@ -92,6 +92,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 
 class ProductPage:
     # Fixed locators - using tuples consistently
@@ -99,6 +100,15 @@ class ProductPage:
     update_button = (By.XPATH, "//input[contains(@value, 'Update')]")
     unit_price_element = (By.XPATH, "//span[@class='cart-price cart-column']")
     total_price_element = (By.XPATH, "//span[@class='cart-total-price']")
+    check_out_button = (By.XPATH, "//button[@class='btn btn-primary btn-purchase']")
+    phone_field = (By.XPATH, "//input[@name='phone']")
+    street_address_input = (By.XPATH, "//input[@name='street']")
+    city_input = (By.XPATH, "//input[@name='city']")
+    country_dropdown_input = (By.XPATH, "//select[@id='countries_dropdown_menu']")
+    submit_order_button = (By.XPATH, "//button[@id='submitOrderBtn']")
+    success_amount = (By.XPATH, "//*[@id='message']/b[1]")
+
+
 
     def __init__(self, driver):
         self.driver = driver
@@ -117,15 +127,33 @@ class ProductPage:
 
     def input_quantity_with_enter(self, quantity):
         # Wait for the quantity field to be available
-        qty_field = self.wait.until(EC.element_to_be_clickable(self.quantity_input))
-        qty_field.clear()
+        try:
+            # Wait for the quantity field to be available
+            qty_field = self.wait.until(EC.element_to_be_clickable(self.quantity_input))
+            qty_field.clear()
 
-        actions = ActionChains(self.driver)
-        actions.click(qty_field)
-        actions.send_keys(Keys.BACK_SPACE)
-        actions.send_keys(str(quantity))
-        actions.send_keys(Keys.ENTER)
-        actions.perform()
+            actions = ActionChains(self.driver)
+            actions.click(qty_field)
+            actions.send_keys(Keys.BACK_SPACE)
+            actions.send_keys(str(quantity))
+            actions.send_keys(Keys.ENTER)
+            actions.perform()
+
+            # Wait for the page to process the change
+            self.wait.until(lambda driver: self._is_total_updated(quantity))
+        except Exception as e:
+            raise Exception(f"Failed to update quantity using Enter key: {str(e)}")
+
+    def _is_total_updated(self, quantity):
+        """Helper method to verify total price updates after quantity change"""
+        try:
+            total_element = self.driver.find_element(*self.total_price_element)
+            total_text = total_element.text.replace('$', '').replace(',', '')
+            unit_price = self.get_unit_price()
+            expected_total = unit_price * quantity
+            return abs(float(total_text) - expected_total) < 0.01
+        except:
+            return False
 
     def update_quantity(self, quantity):
         # Alternative method if input_quantity_with_enter doesn't work
@@ -140,3 +168,69 @@ class ProductPage:
         total_element = self.wait.until(EC.visibility_of_element_located(self.total_price_element))
         total_text = total_element.text
         return total_text
+
+    def checkout(self):
+        try:
+            # Proceed to checkout
+            checkout_button = self.wait.until(EC.element_to_be_clickable(self.check_out_button))
+            checkout_button.click()
+        except (TimeoutException, ElementClickInterceptedException) as e:
+            raise Exception(f"Failed to click checkout button: {str(e)}")
+
+    def input_phone(self, number):
+        try:
+            phone_input = self.wait.until(EC.element_to_be_clickable(self.phone_field))
+            phone_input.clear()
+            phone_input.send_keys(number)
+        except Exception as e:
+            raise Exception(f"Failed to input phone number: {str(e)}")
+
+    def input_street_add(self, address):
+        try:
+            street_input = self.wait.until(EC.element_to_be_clickable(self.street_address_input))
+            street_input.clear()
+            street_input.send_keys(address)
+        except Exception as e:
+            raise Exception(f"Failed to input street address: {str(e)}")
+
+    def input_city(self, city):
+        try:
+            city_field = self.wait.until(EC.element_to_be_clickable(self.city_input))
+            city_field.clear()
+            city_field.send_keys(city)
+        except Exception as e:
+            raise Exception(f"Failed to input city: {str(e)}")
+
+    def select_country_by_xpath(self, country_name):
+        """
+        Selects a country from the dropdown by directly clicking the option
+        """
+        try:
+            # First click the dropdown to open it
+            dropdown = self.wait.until(EC.element_to_be_clickable(self.country_dropdown_input))
+            dropdown.click()
+
+            # Wait for options to be visible and click the desired one
+            xpath = f"//select[@id='countries_dropdown_menu']/option[text()='{country_name}']"
+            option = self.wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+            option.click()
+        except Exception as e:
+            raise Exception(f"Failed to select country '{country_name}': {str(e)}")
+
+    def submit_order(self):
+        try:
+            submit_button = self.wait.until(EC.element_to_be_clickable(self.submit_order_button))
+            submit_button.click()
+
+            # Wait for success page to load
+            self.wait.until(EC.visibility_of_element_located(self.success_amount))
+        except Exception as e:
+            raise Exception(f"Failed to submit order: {str(e)}")
+
+    def get_order_amount_on_success_page(self):
+        try:
+            return self.wait.until(EC.visibility_of_element_located(self.success_amount))
+        except TimeoutException as e:
+            raise Exception(f"Could not retrieve success amount: {str(e)}")
+
+
